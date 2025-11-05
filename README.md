@@ -9,215 +9,385 @@ Official repository for the paper:
 
 ## 📘 Overview
 
-We present **ESN‑F** — an **Echo State Network (ESN)** enhanced with **Fourier features** and **polynomial expansion** for forecasting **chaotic / nonlinear** time series. The approach keeps the **reservoir untrained** and learns only a **ridge readout**, while enriching inputs with **periodic (sin/cos)** and **nonlinear** bases that improve long‑horizon stability.
+We present **ESN‑F** — the **Echo State Network (ESN)** enhanced with **Fourier features** and **polynomial expansion** for forecasting **chaotic / nonlinear** time series. The approach keeps the **reservoir untrained** and learns only a **ridge readout**, while enriching inputs with **periodic (sin/cos)** and **nonlinear** bases that improve long‑horizon stability.
 
 Use cases include **finance/economics**, **risk modeling**, and other **non‑stationary** domains.
 
 ---
 
-## 🗂 Project Layout
+## Contents
 
-```
-.
-├── src/asc_itmo_lab/   # library code (reservoirs, features, utils)
-├── notebooks/          # research notebooks & reproductions
-├── tests/              # unit tests
-├── data/               # datasets / artifacts (see notebooks)
-├── requirements.txt    # dependencies (pinned)
-└── LICENSE             # MIT
-```
+* [Why this project?](#why-this-project)
+* [Install](#install)
+* [Quickstart](#quickstart)
+* [Generative (multi-step) forecasting](#generative-multi-step-forecasting)
+* [Multivariate example](#multivariate-example)
+* [Background & Theory](#background--theory)
+
+  * [Echo State Network (leaky ESN)](#echo-state-network-leaky-esn)
+  * [Fourier & Polynomial feature blocks (FAN)](#fourier--polynomial-feature-blocks-fan)
+  * [Ridge readout & objective](#ridge-readout--objective)
+  * [Forecasting strategies](#forecasting-strategies)
+  * [Why it helps with chaos & non‑stationarity](#why-it-helps-with-chaos--non-stationarity)
+* [Predictability metrics (optional)](#predictability-metrics-optional)
+* [📐 Predictability features (formulas)](#-predictability-features-formulas)
+* [Hyperparameters](#hyperparameters)
+* [Complexity & scaling](#complexity--scaling)
+* [Reproducibility](#reproducibility)
+* [Figures (placeholders)](#figures-placeholders)
+* [📊 Experimental Results (from the paper)](#-experimental-results-from-the-paper)
+* [Project layout](#project-layout)
+* [Contributing](#contributing)
+* [License & citation](#license--citation)
+* [Troubleshooting / FAQ](#troubleshooting--faq)
 
 ---
 
-## 🚀 Quick Start
+## Why this project?
 
-### Installation
+Long‑horizon forecasting on chaotic / weakly stationary signals is tricky: standard RNNs tend to drift, while purely statistical baselines miss nonlinear structure. **EnhancedESN_FAN** keeps a **random, untrained reservoir** for rich dynamics and augments the readout with **deterministic Fourier harmonics** and **polynomial features**. The linear readout is trained via **ridge regression**, keeping training fast, convex, and robust.
+
+---
+
+## Install
+
 ```bash
+# From source (recommended for now)
 git clone https://github.com/CapitalistGeorge/Advanced-Reservoir-Neural-Network-Techniques-for-Chaotic-Time-Series-Prediction.git
 cd Advanced-Reservoir-Neural-Network-Techniques-for-Chaotic-Time-Series-Prediction
 
-# (optional) create a clean environment
 python -m venv .venv
-# macOS/Linux:
+# macOS/Linux
 source .venv/bin/activate
-# Windows (PowerShell):
+# Windows (PowerShell)
 # .venv\Scripts\Activate.ps1
 
 python -m pip install -U pip
 pip install -r requirements.txt
 ```
 
-### Run examples (notebooks-first)
-```bash
-jupyter lab  # or: jupyter notebook
-# open notebooks/ and run the demos / reproductions
+*Planned:* after the API is frozen we’ll publish to PyPI, so you can `pip install esn-fan` (package name TBD). The import path in the examples below assumes a module `enhanced_esn_fan.py` at the project root; adjust if packaged differently.
+
+---
+
+## Quickstart
+
+```python
+import numpy as np
+from enhanced_esn_fan import EnhancedESN_FAN  # adjust import path if packaged differently
+
+# 1) Build training data (shape: [n_timesteps, input_dim])
+# Univariate example: input_dim=1 → X is 2D with one column, y is 1D
+T = 1200
+noise = 0.1 * np.random.randn(T)
+signal = np.sin(2*np.pi*np.arange(T)/50) + 0.25*np.sin(2*np.pi*np.arange(T)/7) + noise
+
+X = signal[:-1].reshape(-1, 1)   # features are previous value(s)
+y = signal[1:]                   # next-step target
+
+# 2) Initialize Enhanced ESN + FAN features (Fourier + polynomial)
+esn = EnhancedESN_FAN(
+    input_dim=1,          # number of input features per timestep (columns of X)
+    reservoir_size=800,
+    spectral_radius=0.95,
+    sparsity=0.1,
+    ridge_alpha=1e-2,
+    leaking_rate=0.3,
+    poly_order=2,
+    fan_terms=8,
+    random_state=42,
+    clip_value=3.0,
+)
+
+# 3) Fit and one-step-ahead predictions (teacher forcing / open loop)
+esn.fit(X, y)
+y_hat = esn.predict(X[:100])        # shape: (100,) for univariate target
+print("y_hat shape:", np.asarray(y_hat).shape)
 ```
 
-### Code quality (optional)
-```bash
-pytest -q        # unit tests (./tests)
-ruff check .     # lint
-ruff format .    # format
+---
+
+## Generative (multi-step) forecasting
+
+```python
+# Seed with the last observed input row (shape: [1, input_dim])
+seed = X[-1:].copy()
+
+# Produce next 300 steps autoregressively
+future = esn.predict(seed, generative_steps=300)   # shape: (300,) for univariate
+
+# Concatenate history + forecast for plotting
+full = np.concatenate([signal, future.ravel()])
 ```
 
 ---
 
-## 🧩 Motivation
+## Multivariate example
 
-Chaotic time series are inherently unpredictable due to their **sensitivity to initial conditions**, yet they exhibit **hidden regularities** that can be uncovered in the **frequency domain**.
+```python
+import numpy as np
+from enhanced_esn_fan import EnhancedESN_FAN
 
-Traditional neural networks tend to overfit such data or lose stability. To address this, we combine the **fast, low-training-cost dynamics of reservoir computing** with **Fourier-based feature expansion**.
+# Suppose you have 3 exogenous drivers + the main signal → input_dim=4
+n = 2000
+main = np.sin(2*np.pi*np.arange(n)/30) + 0.05*np.random.randn(n)
+x1 = np.cos(2*np.pi*np.arange(n)/100)
+x2 = np.sin(2*np.pi*np.arange(n)/7)
+x3 = 0.01*np.arange(n)  # slow trend proxy
 
-> “The key idea is to move part of the temporal representation from the time domain to the frequency domain — allowing the model to selectively amplify meaningful periodicities while suppressing chaotic noise.”
+# Features: use current drivers + lagged main as input; predict next main
+X = np.column_stack([main[:-1], x1[:-1], x2[:-1], x3[:-1]])  # shape (n-1, 4)
+y = main[1:]                                               # shape (n-1,)
 
----
+model = EnhancedESN_FAN(
+    input_dim=4,
+    reservoir_size=500,
+    spectral_radius=0.9,
+    sparsity=0.1,
+    ridge_alpha=0.1,
+    leaking_rate=0.4,
+    poly_order=2,
+    fan_terms=6,
+    random_state=7,
+)
 
-## 🔬 Methodology (ESN‑F)
-
-**Reservoir (leaky ESN)**
-$ \mathbf{s}_t \;=\; (1-\alpha)\,\mathbf{s}_{t-1} \;+\; \alpha\,\tanh\!\big( W_{\text{in}}\,[1;\,\mathbf{x}_t] \;+\; W\,\mathbf{s}_{t-1} \big) \tag{1} $
-
-- $\alpha \in (0,1]$ — leaking rate;
-- $W_{\text{in}}\!\in\!\mathbb{R}^{N\times(d+1)}$, $W\!\in\!\mathbb{R}^{N\times N}$ — sparse reservoir weights (scaled by spectral radius).
-
-**Polynomial expansion** (degree $p$)
-\[
-\boldsymbol{\phi}(\mathbf{x}_t) \;=\; \mathrm{Poly}_p(\mathbf{x}_t) \tag{2}
-\[
-
-**Fourier (harmonic) features** for $k=1,\dots,K$
-$$
-\boldsymbol{\psi}(\mathbf{x}_t) \;=\; \big[\,A_k,\ \sin(2\pi k\,\mathbf{x}_t),\ \cos(2\pi k\,\mathbf{x}_t)\,\big]_{k=1}^{K} \tag{3}
-$$
-
-**Feature concatenation**
-$$
-\mathbf{H}_t \;=\; \big[\,\mathbf{s}_t;\ \boldsymbol{\phi}(\mathbf{x}_t);\ \boldsymbol{\psi}(\mathbf{x}_t)\,\big] \tag{4}
-$$
-
-**Standardization & ridge readout**
-$$
-\hat{\mathbf{y}}_t \;=\; W_{\text{out}}\,\tilde{\mathbf{H}}_t,\qquad
-W_{\text{out}}=\arg\min_W \|Y-WH\|_2^2+\lambda\|W\|_2^2 \tag{5}
-$$
-
-All equations (1)–(5) are exactly as in the paper’s **Design** section. Fourier & polynomial terms are **feature engineering** feeding the readout; the reservoir core remains **untrained**.
+model.fit(X, y)
+pred = model.predict(X[:128])              # one-step predictions (teacher forcing)
+gen  = model.predict(X[-1:], generative_steps=200)  # recursive forecast
+```
 
 ---
 
-## 🧪 Datasets & Protocol (as in the paper)
+## Background & Theory
 
-- **M4 subset**: 1,500 real‑life series (length ≈1000), forecast horizon **15**, **15** rolling runs, metric **MAPE**.
-- **Clustering by predictability** (features: **Hurst**, **Noise** factor, **Correlation dimension**, **max Lyapunov**, **KSE**, number of prevailing Fourier harmonics $N_{Fh}$) → **Good** (1176) vs **Bad** (324).
-- **Real estate (Moscow)**: weekly series **2016‑12‑28 → 2024‑12‑25** (418 pts), smoothed by 13‑point moving average; expanding‑window CV (initial train **104**, horizon **52**).
+### Echo State Network (leaky ESN)
+
+Reservoir state (\mathbf{x}*t \in \mathbb{R}^{N_r}) evolves under a fixed random dynamical system:
+[
+\tilde{\mathbf{x}}*t = \tanh\big( \mathbf{W}\mathbf{x}*{t-1} + \mathbf{W}*{\text{in}},[1; u_t] \big),\qquad
+\mathbf{x}*t = (1-\alpha),\mathbf{x}*{t-1} + \alpha,\tilde{\mathbf{x}}_t,
+]
+where (u_t) is the input (e.g., components of (X_t)), ([1; u_t]) denotes a bias‑augmented input, and **(\alpha)** is the **leaking rate** (=`leaking_rate`). To satisfy the **echo state property** (state forgets initial conditions), scale the reservoir so that its spectral radius (\rho(\mathbf{W})) is near 1 (practically 0.7–1.2 with leakage; parameter =`spectral_radius`).
+
+We collect features at time (t) by concatenating the reservoir state with deterministic blocks:
+[
+\mathbf{z}*t = \big[ \mathbf{x}*t ;|; \phi*{\text{poly}}(u_t) ;|; \phi*{\text{Fourier}}(u_t) \big] \in \mathbb{R}^{D}.
+]
+
+### Fourier & Polynomial feature blocks (FAN)
+
+* **PolynomialFeatures** of degree (d) (=`poly_order`): ([u_t, u_t^2, \dots, u_t^d]) per input dimension (no extra bias term; bias provided separately).
+* **Fourier (FAN) features** with harmonics (k=1..K) (=`fan_terms`): for each input dimension, compute (\sin(2\pi k X)) and (\cos(2\pi k X)). These inject periodic structure explicitly, so the reservoir does not have to "discover" it from scratch.
+
+### Ridge readout & objective
+
+Only the final linear readout (\mathbf{W}*{\text{out}} \in \mathbb{R}^{D\times m}) is trained via ridge regression:
+[
+\min*{\mathbf{W}*{\text{out}}}; \big|\mathbf{Y} - \mathbf{Z}\mathbf{W}*{\text{out}}\big|*2^2
+;+; \lambda \big|\mathbf{W}*{\text{out}}\big|*2^2,
+\quad\Rightarrow\quad
+\mathbf{W}*{\text{out}} = (\mathbf{Z}^\top\mathbf{Z} + \lambda \mathbf{I})^{-1}\mathbf{Z}^\top\mathbf{Y}.
+]
+Columns of (\mathbf{Z}) should be standardized for numerical stability (the implementation uses `StandardScaler`).
+
+### Forecasting strategies
+
+* **Teacher forcing / open loop (default in `predict(X)`):** one‑step predictions using the provided inputs.
+* **Generative / recursive (`predict(seed, generative_steps=m)`):** feed back model outputs as inputs to generate future steps.
+* **Hybrid (future option):** recursive core with direct corrections for selected horizons.
+
+### Why it helps with chaos & non‑stationarity
+
+* Reservoir provides a **rich, fading memory** of nonlinear histories.
+* Fourier layer **anchors** periodic structure → less burden on the reservoir.
+* Polynomial bias **stabilizes** local trends and offsets.
+* Ridge readout **tames variance** and keeps training convex & fast.
 
 ---
 
-## 📊 Experimental Results (from the paper)
+## Predictability metrics (optional)
 
-### M4 (clustered by predictability, MAPE % ↓)
-| Cluster | ESN‑F | ESN | LGBM | Prophet | SSA |
-|---|---:|---:|---:|---:|---:|
-| Good | **3.44** | 3.56 | 3.72 | 6.86 | 18.03 |
-| Bad  | 5.26 | **5.19** | 5.39 | 8.57 | 20.05 |
+You can compute these to **cluster series by predictability** and adapt hyperparameters:
 
-In the **Bad** cluster, ESN‑F beats LGBM by ≥1 pp in **27%** of series (LGBM better in **15%**; remainder negligible).
+* **Hurst exponent (H)** — persistence (>0.5) vs. anti‑persistence (<0.5)
+* **Correlation dimension (D₂)** — attractor dimension (Grassberger–Procaccia)
+* **Max Lyapunov exponent (λₘₐₓ)** — sensitivity to initial conditions
+* **Kolmogorov–Sinai entropy (KSE)** — information production rate
+* **# Prevailing harmonics** — count strong spectral peaks (e.g., via periodogram)
 
-### Moscow Real Estate (weekly, MAPE % ↓)
-| Model | MAPE |
-|---|---:|
-| **ESN‑F** | **2.56** |
-| ESN | 3.19 |
-| LGBM | 7.18 |
-
-Chaotic traits of the real‑estate series (for interpretation): Hurst **0.65**, Noise **0.99**, Corr. dimension **1.33**, max Lyapunov **0.01**, **KSE** **1.84**, $N_{Fh}=30$.
-
----
-
-## 🔧 Reproducing the paper
-
-- Run notebooks in `notebooks/` to reproduce **M4** experiments (15×15 protocol) and the **real‑estate** case study.
-- See comments inside notebooks for dataset preparation, feature extraction, and CV splits.
+Use the cluster to pick `reservoir_size`, `spectral_radius`, and `fan_terms`. For highly chaotic signals (large λₘₐₓ), prefer slightly lower `spectral_radius` and stronger regularization (`ridge_alpha`).
 
 ---
 
 ## 📐 Predictability features (formulas)
 
+*Notation:* ( \bar{x}_\tau ) — sample mean on window of length ( \tau ); ( \theta(\cdot) ) — Heaviside step; ( \rho(i,j) ) — distance in reconstructed phase space (delay embedding optional); ( x'*i = x_i - x*{i-1} ) — first difference.
+
 **Hurst exponent**
 $$
-H \;=\; \frac{\ln\!\big(R(\tau)/S(\tau)\big)}{\ln(\alpha \tau)} \tag{6}
+H ,=, \frac{\ln!\big(R(\tau)/S(\tau)\big)}{\ln(\alpha,\tau)} \tag{6}
 $$
 with
 $$
-R(\tau) = \max_{1\le t\le \tau} \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \;-\; \min_{1\le t\le \tau} \sum_{i=1}^{t} (x_i - \bar{x}_\tau), \quad
-S(\tau)=\sqrt{\frac{1}{\tau}\sum_{t=1}^{\tau}(x_t-\bar{x}_\tau)^2}. \tag{7,8}
+R(\tau) = \max_{1\le t\le \tau} \sum_{i=1}^{t} (x_i - \bar{x}*\tau) ;-;
+\min*{1\le t\le \tau} \sum_{i=1}^{t} (x_i - \bar{x}*\tau), \quad
+S(\tau)=\sqrt{\frac{1}{\tau}\sum*{t=1}^{\tau}(x_t-\bar{x}_\tau)^2}. \tag{7,8}
 $$
 
+> Note: in classical R/S analysis, (H) is the slope of (\ln(R/S)) vs (\ln \tau), i.e., (\alpha=1). Including a constant (\alpha) is equivalent up to offset.
 
-**KSE (Kolmogorov–Sinai entropy)** — definition via entropy rate upper bound:
+**KSE (Kolmogorov–Sinai entropy)** — definition via entropy‑rate upper bound:
 $$
-h_\mu(T,\xi) = - \lim_{n\to\infty}\frac{1}{n} \sum_{i_1,\dots,i_n} \mu(T^{-1}C_{i_1}\cap\cdots\cap T^{-n}C_{i_n}) \ln \mu(\cdots), \quad
-h^{KS}_\mu(T)=\sup_{\xi} h_\mu(T,\xi). \tag{9,10}
+h_\mu(T,\xi) ,=, - \lim_{n\to\infty}\frac{1}{n}
+\sum_{i_1,\dots,i_n} \mu!\big(T^{-1}C_{i_1}\cap\cdots\cap T^{-n}C_{i_n}\big),\ln \mu(\cdots), \quad
+h^{KS}*\mu(T)=\sup*{\xi} h_\mu(T,\xi). \tag{9,10}
 $$
-
 
 **Correlation dimension**
 $$
-d_k = \lim_{r\to 0}\lim_{m\to\infty}\frac{\ln C(r)}{\ln r},\quad
-C(r)=\frac{1}{m(m-1)}\sum_{i=1}^{m}\sum_{j=i+1}^{m}\theta(r-\rho(i,j)). \tag{11,12,13}
+d_2 ,=, \lim_{r\to 0}\lim_{m\to\infty}\frac{\ln C(r)}{\ln r}, \quad
+C(r)=\frac{1}{m(m-1)}\sum_{i=1}^{m}\sum_{j=i+1}^{m}\theta\big(r-\rho(i,j)\big). \tag{11,12,13}
 $$
 
+> Often denoted (D_2); estimated as the local slope of (\ln C(r)) vs. (\ln r) for small (r).
 
 **Prevailing Fourier harmonics**
 $$
 N_{Fh}=\sum_{i=1}^{k}\theta(A_i-\bar{A}). \tag{14}
 $$
 
-
 **Noise factor**
 $$
-F_N = 1 - \sqrt{ \frac{N}{N-1} \cdot \frac{\sum_{i=1}^{N-1}(x'_{i}-\bar{x}')^2}{\sum_{i=1}^{N}(x_{i}-\bar{x})^2} } \tag{15}
+F_N ,=, 1 - \sqrt{\frac{N}{N-1}
+\cdot \frac{\sum_{i=1}^{N-1}\big(x'*{i}-\bar{x}'\big)^2}{\sum*{i=1}^{N}\big(x_{i}-\bar{x}\big)^2} } \tag{15}
 $$
 
+---
+
+## Hyperparameters
+
+| Parameter         | Meaning                                             | Typical range / tips                |
+| ----------------- | --------------------------------------------------- | ----------------------------------- |
+| `reservoir_size`  | Number of reservoir units                           | 300–2000                            |
+| `spectral_radius` | Spectral radius after scaling                       | 0.7–1.2 with leakage                |
+| `sparsity`        | Fraction of **zeroed** connections (mask threshold) | 0.7–0.95 for very sparse reservoirs |
+| `leaking_rate`    | Leaky integrator rate                               | 0.1–0.5 for longer memory           |
+| `ridge_alpha`     | Ridge regularization strength                       | 1e−6–1e0                            |
+| `poly_order`      | Polynomial degree (no bias term)                    | 1–3                                 |
+| `fan_terms`       | #Fourier harmonics per input dimension              | 3–12                                |
+| `clip_value`      | Clip for scaled inputs in generative mode           | 2–5                                 |
+| `random_state`    | Seed                                                | set for reproducibility             |
 
 ---
 
-## 🧰 Dependencies
+## Complexity & scaling
 
-Install from `requirements.txt`:
-```bash
-pip install -r requirements.txt
+* **State update:** (O(T,N_r,s)) with sparsity fraction (s) (dense → (O(T,N_r^2))).
+* **Readout training:** build (\mathbf{Z}\in\mathbb{R}^{T\times D}); solve ridge via Cholesky/QR: ~(O(D^3)) (usually (D \ll T)).
+* **Memory:** (O(TD)) if keeping all features; use chunked/online solvers for very long series.
+
+---
+
+## Reproducibility
+
+* Fix `random_state` for weights and reservoirs.
+* Standardize inputs and feature matrix consistently across train/forecast.
+* Log: hyperparameters, seeds, and package versions.
+* Provide notebooks that mirror experiments and regenerate figures.
+
+---
+
+## Figures (placeholders)
+
+Put images in `docs/figures/` (SVG/PNG). Filenames below are suggestions; feel free to rename.
+
+**Model architecture** <img src="docs/figures/fig-architecture-esnf.svg" width="760" alt="ESN-FAN architecture: input → reservoir (leaky ESN) → concat Fourier & poly → ridge readout"/>
+
+**Reservoir dynamics (phase portrait)** <img src="docs/figures/fig-reservoir-dynamics.png" width="760" alt="Reservoir state trajectories and fading memory with different leak rates"/>
+
+**Ablation: effect of feature blocks** <img src="docs/figures/fig-ablation-fourier-poly.png" width="760" alt="MAPE/RMSE across ESN, ESN+Poly, ESN+Fourier, ESN+Fourier+Poly"/>
+
+**Predictability clustering** <img src="docs/figures/fig-predictability-clusters.svg" width="760" alt="Series clustered by H, D2, λmax, KSE, #harmonics; hyperparameter recipes per cluster"/>
+
+**Long-horizon forecast vs. truth** <img src="docs/figures/fig-forecast-long-horizon.png" width="760" alt="Ground truth vs ESN-FAN forecast with prediction intervals; error growth comparison"/>
+
+*(If you prefer pure Markdown images, you can also use: `![Architecture](docs/figures/fig-architecture-esnf.svg)` and similar.)*
+
+---
+
+## 📊 Experimental Results (from the paper)
+
+### M4 (clustered by predictability, MAPE % ↓)
+
+| Cluster |    ESN‑F |      ESN | LGBM | Prophet |   SSA |
+| ------- | -------: | -------: | ---: | ------: | ----: |
+| Good    | **3.44** |     3.56 | 3.72 |    6.86 | 18.03 |
+| Bad     |     5.26 | **5.19** | 5.39 |    8.57 | 20.05 |
+
+In the **Bad** cluster, ESN‑F beats LGBM by ≥1 pp in **27%** of series (LGBM better in **15%**; remainder negligible).
+
+### Moscow Real Estate (weekly, MAPE % ↓)
+
+| Model     |     MAPE |
+| --------- | -------: |
+| **ESN‑F** | **2.56** |
+| ESN       |     3.19 |
+| LGBM      |     7.18 |
+
+Chaotic traits of the real‑estate series (for interpretation): Hurst **0.65**, Noise **0.99**, Corr. dimension **1.33**, max Lyapunov **0.01**, **KSE** **1.84**, (N_{Fh}=30).
+
+---
+
+## Project layout
+
 ```
-Typical stack: Python, NumPy/SciPy, scikit‑learn, Jupyter, plotting libs, and QA tooling (ruff, pytest).
+.
+├── enhanced_esn_fan.py         # implementation of EnhancedESN_FAN
+├── src/…                       # (optional) package structure if you go modular
+├── notebooks/                  # demos, reproductions
+├── tests/                      # unit tests
+├── docs/figures/               # images for README & docs
+├── requirements.txt
+├── pyproject.toml
+└── LICENSE
+```
 
 ---
 
-## 🧑‍🔬 Authors and Credits
+## Contributing
 
-Developed by **[ACS Lab, ITMO University](https://iai.itmo.ru/)**
-Maintainer: [@CapitalistGeorge](https://github.com/CapitalistGeorge)
-Contributors: A. Kovantsev, R. Vysotskiy, and ACS Lab research team.
+* Run linters/formatters before committing (e.g., `ruff check .` / `ruff format .`).
+* Add/extend tests in `tests/`.
+* For new feature blocks, include a minimal notebook demo.
+* Keep figures reproducible from notebooks where possible.
 
 ---
 
-## 📚 Citation
+## License & citation
 
-```bibtex
-@article{KovantsevVysotskiy2025Reservoir,
-  title   = {Advanced Reservoir Neural Network Techniques for Chaotic Time Series Prediction},
-  author  = {Kovantsev, Anton and Vysotskiy, Roman},
+**License:** MIT — see [`LICENSE`](./LICENSE).
+
+**Citation (placeholder):** If you use this repository, please cite the corresponding preprint/paper.
+
+```
+@misc{esn_fan_2025,
+  title   = {Enhanced Echo State Network with Fourier Analysis Network (FAN) Features},
+  author  = {Kovantsev, A. and Vysotskiy, R.},
   year    = {2025},
-  journal = {SSRN Electronic Journal},
-  doi     = {10.2139/ssrn.5481760}
+  note    = {preprint},
+  howpublished = {URL: add when available}
 }
 ```
 
 ---
 
-## 🪪 License
+## Troubleshooting / FAQ
 
-Released under the **MIT License** — free to use, modify, and distribute with attribution.
+**Q: My recursive (generative) forecast saturates or explodes.**
+A: Increase `ridge_alpha`, decrease `spectral_radius`, and consider a slightly larger `clip_value` (2–5). Also try lowering `leaking_rate` for longer memory.
 
----
+**Q: Shapes?**
+A: `X` must be 2D: `(n_timesteps, input_dim)`. For univariate, reshape with `reshape(-1, 1)`. `y` can be 1D (univariate) or 2D (multi‑output).
 
-> _“Spectral insight meets chaotic dynamics — bridging periodicity and unpredictability.”_
+**Q: Scaling consistency between train and predict?**
+A: The model uses internal scalers. Ensure that polynomial and Fourier features at prediction time are computed in a way consistent with training. If you modify the code, apply the same input scaling before feature generation in all paths (teacher forcing and generative).
