@@ -57,7 +57,7 @@ class EnhancedESN_FAN:
 
     Examples
     --------
-    >>> from enhanced_esn_fan import EnhancedESN_FAN
+    >>> from chaotic_library.enhanced_esn_fan import EnhancedESN_FAN
     >>> import numpy as np
     >>>
     >>> # Generate sample data

@@ -221,46 +221,38 @@ Use the cluster to pick `reservoir_size`, `spectral_radius`, and `fan_terms`. Fo
 
 ## 📐 Predictability features (formulas)
 
-*Notation:* ( \bar{x}_\tau ) — sample mean on window of length ( \tau ); ( \theta(\cdot) ) — Heaviside step; ( \rho(i,j) ) — distance in reconstructed phase space (delay embedding optional); ( x'*i = x_i - x*{i-1} ) — first difference.
+NOTATION:
+  x̄_τ    - sample mean on window of length τ
+  θ(·)   - Heaviside step function
+  ρ(i,j) - distance in reconstructed phase space (delay embedding optional)
+  x'_i   = x_i - x_{i-1}  (first difference)
 
-**Hurst exponent**
-$$
-H ,=, \frac{\ln!\big(R(\tau)/S(\tau)\big)}{\ln(\alpha,\tau)} \tag{6}
-$$
-with
-$$
-R(\tau) = \max_{1\le t\le \tau} \sum_{i=1}^{t} (x_i - \bar{x}*\tau) ;-;
-\min*{1\le t\le \tau} \sum_{i=1}^{t} (x_i - \bar{x}*\tau), \quad
-S(\tau)=\sqrt{\frac{1}{\tau}\sum*{t=1}^{\tau}(x_t-\bar{x}_\tau)^2}. \tag{7,8}
-$$
+HURST EXPONENT
+H = ln( R(τ) / S(τ) ) / ln(α·τ)                                 (6)
 
-> Note: in classical R/S analysis, (H) is the slope of (\ln(R/S)) vs (\ln \tau), i.e., (\alpha=1). Including a constant (\alpha) is equivalent up to offset.
+where:
+R(τ) = max[1≤t≤τ] [ Σ[i=1 to t] (x_i - x̄_τ) ] 
+       - min[1≤t≤τ] [ Σ[i=1 to t] (x_i - x̄_τ) ]                 (7)
+       
+S(τ) = √[ (1/τ) · Σ[t=1 to τ] (x_t - x̄_τ)² ]                   (8)
 
-**KSE (Kolmogorov–Sinai entropy)** — definition via entropy‑rate upper bound:
-$$
-h_\mu(T,\xi) ,=, - \lim_{n\to\infty}\frac{1}{n}
-\sum_{i_1,\dots,i_n} \mu!\big(T^{-1}C_{i_1}\cap\cdots\cap T^{-n}C_{i_n}\big),\ln \mu(\cdots), \quad
-h^{KS}*\mu(T)=\sup*{\xi} h_\mu(T,\xi). \tag{9,10}
-$$
+Note: in classical R/S analysis, H is the slope of ln(R/S) vs ln τ 
+(i.e., α=1). Including a constant α is equivalent up to offset.
 
-**Correlation dimension**
-$$
-d_2 ,=, \lim_{r\to 0}\lim_{m\to\infty}\frac{\ln C(r)}{\ln r}, \quad
-C(r)=\frac{1}{m(m-1)}\sum_{i=1}^{m}\sum_{j=i+1}^{m}\theta\big(r-\rho(i,j)\big). \tag{11,12,13}
-$$
+KOLMOGOROV-SINAI ENTROPY (KSE)
+Definition via entropy-rate upper bound:
 
-> Often denoted (D_2); estimated as the local slope of (\ln C(r)) vs. (\ln r) for small (r).
+h_μ(T,ξ) = - lim[n→∞] (1/n) 
+           × Σ[i₁,...,iₙ] μ( T⁻¹C_i₁ ∩ ... ∩ T⁻ⁿC_iₙ ) · ln μ(...)  (9)
 
-**Prevailing Fourier harmonics**
-$$
-N_{Fh}=\sum_{i=1}^{k}\theta(A_i-\bar{A}). \tag{14}
-$$
+h_μ^KS(T) = sup[ξ] h_μ(T,ξ)                                       (10)
 
-**Noise factor**
-$$
-F_N ,=, 1 - \sqrt{\frac{N}{N-1}
-\cdot \frac{\sum_{i=1}^{N-1}\big(x'*{i}-\bar{x}'\big)^2}{\sum*{i=1}^{N}\big(x_{i}-\bar{x}\big)^2} } \tag{15}
-$$
+CORRELATION DIMENSION
+d₂ = lim[r→0] lim[m→∞] ln C(r) / ln r                           (11)
+
+where:
+C(r) = 1 / [m(m-1)] 
+       × Σ[i=1 to m] Σ[j=i+1 to m] θ( r - ρ(i,j) )              (12,13)
 
 ---
 
