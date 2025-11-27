@@ -179,7 +179,7 @@ $$
 where:
 - \u_t is the input (e.g., components of \X_t)
 - \[1; u_t] denotes a bias‑augmented input
-- \alpha is the **leaking rate** (`leaking_rate` parameter)
+- $$\alpha$$ is the **leaking rate** (`leaking_rate` parameter)
 
 To satisfy the **echo state property** (state forgets initial conditions), scale the reservoir so that its spectral radius \(\rho(\mathbf{W})\) is near 1 (practically 0.7–1.2 with leakage; `spectral_radius` parameter).
 
