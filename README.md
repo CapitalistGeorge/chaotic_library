@@ -255,15 +255,15 @@ Use the cluster to pick `reservoir_size`, `spectral_radius`, and `fan_terms`. Fo
 ### Hurst Exponent
 
 $$
-H = \frac{\ln\left( R(\tau) / S(\tau) \right)}{\ln(\alpha \cdot \tau)} \tag{6}
+H = \frac{\ln\left( R(\tau) / S(\tau) \right)}{\ln(\alpha \cdot \tau)}
 $$
 
 where:
 
 $$
 \begin{aligned}
-R(\tau) &= \max_{1 \leq t \leq \tau} \left[ \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \right] - \min_{1 \leq t \leq \tau} \left[ \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \right] \tag{7} \\
-S(\tau) &= \sqrt{ \frac{1}{\tau} \sum_{t=1}^{\tau} (x_t - \bar{x}_\tau)^2 } \tag{8}
+R(\tau) &= \max_{1 \leq t \leq \tau} \left[ \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \right] - \min_{1 \leq t \leq \tau} \left[ \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \right] \\
+S(\tau) &= \sqrt{ \frac{1}{\tau} \sum_{t=1}^{\tau} (x_t - \bar{x}_\tau)^2 }
 \end{aligned}
 $$
 
@@ -275,21 +275,22 @@ Definition via entropy-rate upper bound:
 
 $$
 \begin{aligned}
-h_\mu(T,\xi) &= - \lim_{n\to\infty} \frac{1}{n} \times \sum_{i_1,\dots,i_n} \mu( T^{-1}C_{i_1} \cap \dots \cap T^{-n}C_{i_n} ) \cdot \ln \mu(\dots) \tag{9} \\
-h_\mu^{KS}(T) &= \sup_{\xi} h_\mu(T,\xi) \tag{10}
+h_\mu(T,\xi) &= - \lim_{n\to\infty} \frac{1}{n} \times \sum_{i_1,\dots,i_n} \mu( T^{-1}C_{i_1} \cap \dots \cap T^{-n}C_{i_n} ) \cdot \ln \mu(\dots) \\
+h_\mu^{KS}(T) &= \sup_{\xi} h_\mu(T,\xi)
 \end{aligned}
 $$
 
 ### Correlation Dimension
 
 $$
-d_2 = \lim_{r\to 0} \lim_{m\to\infty} \frac{\ln C(r)}{\ln r} \tag{11}
+d_2 = \lim_{r\to 0} \lim_{m\to\infty} \frac{\ln C(r)}{\ln r}
 $$
 
 where:
 
 $$
-C(r) = \frac{1}{m(m-1)} \times \sum_{i=1}^{m} \sum_{j=i+1}^{m} \theta\left( r - \rho(i,j) \right) \tag{12,13}
+C(r) = \frac{1}{m(m-1)} \times \sum_{i=1}^{m} \sum_{j=i+1}^{m} \theta\left( r - \rho(i,j) \right)
+
 ---
 
 ## Hyperparameters
