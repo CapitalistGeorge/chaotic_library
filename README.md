@@ -177,7 +177,7 @@ $$
 $$
 
 where:
-- $$\u_t$$ is the input (e.g., components of \X_t)
+- $$u_t$$ is the input (e.g., components of \X_t)
 - $$\[1; u_t]$$ denotes a bias‑augmented input
 - $$\alpha$$ is the **leaking rate** (`leaking_rate` parameter)
 
@@ -190,11 +190,11 @@ $$
 $$
 
 **Notation:**
-- \(\mathbf{W}\): reservoir weight matrix
-- \(\mathbf{W}_{\text{in}}\): input weight matrix  
-- \(\phi_{\text{poly}}\): polynomial features
-- \(\phi_{\text{Fourier}}\): Fourier features
-- \(D\): total feature dimension
+- $\mathbf{W}$: reservoir weight matrix
+- $\mathbf{W}_{\text{in}}$: input weight matrix  
+- $\phi_{\text{poly}}$: polynomial features
+- $\phi_{\text{Fourier}}$: Fourier features
+- $D$: total feature dimension
 
 ### Fourier & Polynomial feature blocks (FAN)
 
