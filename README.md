@@ -53,8 +53,8 @@ Long‑horizon forecasting on chaotic / weakly stationary signals is tricky: sta
 
 ```bash
 # From source (recommended for now)
-git clone https://github.com/CapitalistGeorge/Advanced-Reservoir-Neural-Network-Techniques-for-Chaotic-Time-Series-Prediction.git
-cd Advanced-Reservoir-Neural-Network-Techniques-for-Chaotic-Time-Series-Prediction
+git clone https://github.com/CapitalistGeorge/chaotic_library.git
+cd chaotic_library
 
 python -m venv .venv
 # macOS/Linux
@@ -63,7 +63,12 @@ source .venv/bin/activate
 # .venv\Scripts\Activate.ps1
 
 python -m pip install -U pip
+
+# Option 1: install dependencies only (for running notebooks / scripts)
 pip install -r requirements.txt
+
+# Option 2: install the package in editable mode (preferred while developing)
+pip install -e .
 ```
 
 *Planned:* after the API is frozen we’ll publish to PyPI, so you can `pip install esn-fan` (package name TBD). The import path in the examples below assumes a module `enhanced_esn_fan.py` at the project root; adjust if packaged differently.
@@ -74,7 +79,7 @@ pip install -r requirements.txt
 
 ```python
 import numpy as np
-from enhanced_esn_fan import EnhancedESN_FAN  # adjust import path if packaged differently
+from chaotic_library import EnhancedESN_FAN  # adjust import path if packaged differently
 
 # 1) Build training data (shape: [n_timesteps, input_dim])
 # Univariate example: input_dim=1 → X is 2D with one column, y is 1D
@@ -126,7 +131,7 @@ full = np.concatenate([signal, future.ravel()])
 
 ```python
 import numpy as np
-from enhanced_esn_fan import EnhancedESN_FAN
+from chaotic_library import EnhancedESN_FAN
 
 # Suppose you have 3 exogenous drivers + the main signal → input_dim=4
 n = 2000
@@ -162,17 +167,26 @@ gen  = model.predict(X[-1:], generative_steps=200)  # recursive forecast
 
 ### Echo State Network (leaky ESN)
 
-Reservoir state (\mathbf{x}*t \in \mathbb{R}^{N_r}) evolves under a fixed random dynamical system:
-[
-\tilde{\mathbf{x}}*t = \tanh\big( \mathbf{W}\mathbf{x}*{t-1} + \mathbf{W}*{\text{in}},[1; u_t] \big),\qquad
-\mathbf{x}*t = (1-\alpha),\mathbf{x}*{t-1} + \alpha,\tilde{\mathbf{x}}_t,
-]
-where (u_t) is the input (e.g., components of (X_t)), ([1; u_t]) denotes a bias‑augmented input, and **(\alpha)** is the **leaking rate** (=`leaking_rate`). To satisfy the **echo state property** (state forgets initial conditions), scale the reservoir so that its spectral radius (\rho(\mathbf{W})) is near 1 (practically 0.7–1.2 with leakage; parameter =`spectral_radius`).
+Reservoir state \(\mathbf{x}_t \in \mathbb{R}^{N_r}\) evolves under a fixed random dynamical system:
 
-We collect features at time (t) by concatenating the reservoir state with deterministic blocks:
-[
-\mathbf{z}*t = \big[ \mathbf{x}*t ;|; \phi*{\text{poly}}(u_t) ;|; \phi*{\text{Fourier}}(u_t) \big] \in \mathbb{R}^{D}.
-]
+$$
+\begin{aligned}
+\tilde{\mathbf{x}}_t &= \tanh\left( \mathbf{W} \mathbf{x}_{t-1} + \mathbf{W}_{\text{in}} [1; u_t] \right), \\
+\mathbf{x}_t &= (1-\alpha) \mathbf{x}_{t-1} + \alpha \tilde{\mathbf{x}}_t,
+\end{aligned}
+$$
+
+где:
+- \(u_t\) — входной сигнал (например, компоненты \(X_t\)),
+- \([1; u_t]\) — вход с добавленным смещением (bias),
+- \(\alpha\) — **leaking rate** (параметр `leaking_rate`).
+
+Для выполнения **echo state property** (забывание начальных условий) масштабируйте резервуар так, чтобы его спектральный радиус \(\rho(\mathbf{W})\) был близок к 1 (практически 0.7–1.2 с учётом утечки; параметр `spectral_radius`).
+
+Признаки в момент времени \(t\) формируются объединением состояния резервуара с детерминированными блоками:
+
+$$
+\mathbf{z}_t = \left[ \mathbf{x}_t \mid \phi_{\text{poly}}(u_t) \mid \phi_{\text{Fourier}}(u_t) \right] \in \mathbb{R}^{D}.
 
 ### Fourier & Polynomial feature blocks (FAN)
 
@@ -332,15 +346,18 @@ Chaotic traits of the real‑estate series (for interpretation): Hurst **0.65**,
 
 ## Project layout
 
-```
+```text
 .
-├── enhanced_esn_fan.py         # implementation of EnhancedESN_FAN
-├── src/…                       # (optional) package structure if you go modular
-├── notebooks/                  # demos, reproductions
-├── tests/                      # unit tests
-├── docs/figures/               # images for README & docs
-├── requirements.txt
-├── pyproject.toml
+├── src/
+│   └── chaotic_library/
+│       ├── __init__.py            # public API (EnhancedESN_FAN, chaos measures, version, etc.)
+│       ├── enhanced_esn_fan.py    # ESN-FAN implementation
+│       └── chaotic_measures.py    # Hurst, Lyapunov, entropy, dimensionality, etc.
+├── tests/                         # unit tests
+├── .github/workflows/             # CI (linting, tests)
+├── requirements.txt               # runtime/dev dependencies
+├── pyproject.toml                 # packaging metadata (build system, project info)
+├── README.md
 └── LICENSE
 ```
 
