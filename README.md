@@ -250,7 +250,7 @@ Use the cluster to pick `reservoir_size`, `spectral_radius`, and `fan_terms`. Fo
 - $\bar{x}_\tau - sample mean on window of length $\tau$
 - $\theta(\cdot)$ - Heaviside step function
 - $$\rho(i,j)$$ - distance in reconstructed phase space (delay embedding optional)
-- $x'_i = x_i - x_{i-1}$ (first difference)
+- $x'_i = x_i - x_{i-1} (first difference)
 
 ### Hurst Exponent
 
@@ -290,6 +290,7 @@ where:
 
 $$
 C(r) = \frac{1}{m(m-1)} \times \sum_{i=1}^{m} \sum_{j=i+1}^{m} \theta\left( r - \rho(i,j) \right)
+$$
 
 ---
 
