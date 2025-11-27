@@ -34,7 +34,6 @@ Use cases include **finance/economics**, **risk modeling**, and other **non‑st
 * [Hyperparameters](#hyperparameters)
 * [Complexity & scaling](#complexity--scaling)
 * [Reproducibility](#reproducibility)
-* [Figures (placeholders)](#figures-placeholders)
 * [📊 Experimental Results (from the paper)](#-experimental-results-from-the-paper)
 * [Project layout](#project-layout)
 * [Contributing](#contributing)
@@ -235,7 +234,7 @@ Columns of $\mathbf{Z}$ should be standardized for numerical stability (the impl
 
 You can compute these to **cluster series by predictability** and adapt hyperparameters:
 
-* **Hurst exponent (H)** — persistence (>0.5) vs. anti‑persistence (<0.5)
+* **Hurst exponent (H)** — persistence (>0.5) vs anti‑persistence (<0.5) vs (=0.5) random walk
 * **Correlation dimension (D₂)** — attractor dimension (Grassberger–Procaccia)
 * **Max Lyapunov exponent (λₘₐₓ)** — sensitivity to initial conditions
 * **Kolmogorov–Sinai entropy (KSE)** — information production rate
@@ -247,39 +246,50 @@ Use the cluster to pick `reservoir_size`, `spectral_radius`, and `fan_terms`. Fo
 
 ## 📐 Predictability features (formulas)
 
-NOTATION:
-  x̄_τ    - sample mean on window of length τ
-  θ(·)   - Heaviside step function
-  ρ(i,j) - distance in reconstructed phase space (delay embedding optional)
-  x'_i   = x_i - x_{i-1}  (first difference)
+**NOTATION:**
+- $\bar{x}_\tau$ - sample mean on window of length $\tau$
+- $\theta(\cdot)$ - Heaviside step function
+- $\rho(i,j)$ - distance in reconstructed phase space (delay embedding optional)
+- $x'_i = x_i - x_{i-1}$ (first difference)
 
-HURST EXPONENT
-H = ln( R(τ) / S(τ) ) / ln(α·τ)                                 (6)
+### Hurst Exponent
+
+$$
+H = \frac{\ln\left( R(\tau) / S(\tau) \right)}{\ln(\alpha \cdot \tau)} \tag{6}
+$$
 
 where:
-R(τ) = max[1≤t≤τ] [ Σ[i=1 to t] (x_i - x̄_τ) ] 
-       - min[1≤t≤τ] [ Σ[i=1 to t] (x_i - x̄_τ) ]                 (7)
-       
-S(τ) = √[ (1/τ) · Σ[t=1 to τ] (x_t - x̄_τ)² ]                   (8)
 
-Note: in classical R/S analysis, H is the slope of ln(R/S) vs ln τ 
-(i.e., α=1). Including a constant α is equivalent up to offset.
+$$
+\begin{aligned}
+R(\tau) &= \max_{1 \leq t \leq \tau} \left[ \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \right] - \min_{1 \leq t \leq \tau} \left[ \sum_{i=1}^{t} (x_i - \bar{x}_\tau) \right] \tag{7} \\
+S(\tau) &= \sqrt{ \frac{1}{\tau} \sum_{t=1}^{\tau} (x_t - \bar{x}_\tau)^2 } \tag{8}
+\end{aligned}
+$$
 
-KOLMOGOROV-SINAI ENTROPY (KSE)
+**Note:** In classical R/S analysis, $H$ is the slope of $\ln(R/S)$ vs $\ln\tau$ (i.e., $\alpha=1$). Including a constant $\alpha$ is equivalent up to offset.
+
+### Kolmogorov-Sinai Entropy (KSE)
+
 Definition via entropy-rate upper bound:
 
-h_μ(T,ξ) = - lim[n→∞] (1/n) 
-           × Σ[i₁,...,iₙ] μ( T⁻¹C_i₁ ∩ ... ∩ T⁻ⁿC_iₙ ) · ln μ(...)  (9)
+$$
+\begin{aligned}
+h_\mu(T,\xi) &= - \lim_{n\to\infty} \frac{1}{n} \times \sum_{i_1,\dots,i_n} \mu( T^{-1}C_{i_1} \cap \dots \cap T^{-n}C_{i_n} ) \cdot \ln \mu(\dots) \tag{9} \\
+h_\mu^{KS}(T) &= \sup_{\xi} h_\mu(T,\xi) \tag{10}
+\end{aligned}
+$$
 
-h_μ^KS(T) = sup[ξ] h_μ(T,ξ)                                       (10)
+### Correlation Dimension
 
-CORRELATION DIMENSION
-d₂ = lim[r→0] lim[m→∞] ln C(r) / ln r                           (11)
+$$
+d_2 = \lim_{r\to 0} \lim_{m\to\infty} \frac{\ln C(r)}{\ln r} \tag{11}
+$$
 
 where:
-C(r) = 1 / [m(m-1)] 
-       × Σ[i=1 to m] Σ[j=i+1 to m] θ( r - ρ(i,j) )              (12,13)
 
+$$
+C(r) = \frac{1}{m(m-1)} \times \sum_{i=1}^{m} \sum_{j=i+1}^{m} \theta\left( r - \rho(i,j) \right) \tag{12,13}
 ---
 
 ## Hyperparameters
@@ -298,12 +308,11 @@ C(r) = 1 / [m(m-1)]
 
 ---
 
-## Complexity & scaling
+## Complexity & Scaling
 
-* **State update:** (O(T,N_r,s)) with sparsity fraction (s) (dense → (O(T,N_r^2))).
-* **Readout training:** build (\mathbf{Z}\in\mathbb{R}^{T\times D}); solve ridge via Cholesky/QR: ~(O(D^3)) (usually (D \ll T)).
-* **Memory:** (O(TD)) if keeping all features; use chunked/online solvers for very long series.
-
+* **State update:** $O(T \cdot N_r \cdot s)$ with sparsity fraction $s$ (dense → $O(T \cdot N_r^2)$)
+* **Readout training:** build $\mathbf{Z} \in \mathbb{R}^{T \times D}$; solve ridge via Cholesky/QR: $\sim O(D^3)$ (usually $D \ll T$)
+* **Memory:** $O(T \cdot D)$ if keeping all features; use chunked/online solvers for very long series
 ---
 
 ## Reproducibility
@@ -312,24 +321,6 @@ C(r) = 1 / [m(m-1)]
 * Standardize inputs and feature matrix consistently across train/forecast.
 * Log: hyperparameters, seeds, and package versions.
 * Provide notebooks that mirror experiments and regenerate figures.
-
----
-
-## Figures (placeholders)
-
-Put images in `docs/figures/` (SVG/PNG). Filenames below are suggestions; feel free to rename.
-
-**Model architecture** <img src="docs/figures/fig-architecture-esnf.svg" width="760" alt="ESN-FAN architecture: input → reservoir (leaky ESN) → concat Fourier & poly → ridge readout"/>
-
-**Reservoir dynamics (phase portrait)** <img src="docs/figures/fig-reservoir-dynamics.png" width="760" alt="Reservoir state trajectories and fading memory with different leak rates"/>
-
-**Ablation: effect of feature blocks** <img src="docs/figures/fig-ablation-fourier-poly.png" width="760" alt="MAPE/RMSE across ESN, ESN+Poly, ESN+Fourier, ESN+Fourier+Poly"/>
-
-**Predictability clustering** <img src="docs/figures/fig-predictability-clusters.svg" width="760" alt="Series clustered by H, D2, λmax, KSE, #harmonics; hyperparameter recipes per cluster"/>
-
-**Long-horizon forecast vs. truth** <img src="docs/figures/fig-forecast-long-horizon.png" width="760" alt="Ground truth vs ESN-FAN forecast with prediction intervals; error growth comparison"/>
-
-*(If you prefer pure Markdown images, you can also use: `![Architecture](docs/figures/fig-architecture-esnf.svg)` and similar.)*
 
 ---
 
