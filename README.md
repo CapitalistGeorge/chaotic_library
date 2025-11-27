@@ -198,19 +198,23 @@ $$
 
 ### Fourier & Polynomial feature blocks (FAN)
 
-* **PolynomialFeatures** of degree (d) (=`poly_order`): ([u_t, u_t^2, \dots, u_t^d]) per input dimension (no extra bias term; bias provided separately).
-* **Fourier (FAN) features** with harmonics (k=1..K) (=`fan_terms`): for each input dimension, compute (\sin(2\pi k X)) and (\cos(2\pi k X)). These inject periodic structure explicitly, so the reservoir does not have to "discover" it from scratch.
+* **PolynomialFeatures** of degree $d$ (`poly_order` parameter): $[u_t, u_t^2, \dots, u_t^d]$ per input dimension (no extra bias term; bias provided separately).
+* **Fourier (FAN) features** with harmonics $k=1..K$ (`fan_terms` parameter): for each input dimension, compute $\sin(2\pi k X)$ and $\cos(2\pi k X)$. These inject periodic structure explicitly, so the reservoir does not have to "discover" it from scratch.
 
 ### Ridge readout & objective
 
-Only the final linear readout (\mathbf{W}*{\text{out}} \in \mathbb{R}^{D\times m}) is trained via ridge regression:
-[
-\min*{\mathbf{W}*{\text{out}}}; \big|\mathbf{Y} - \mathbf{Z}\mathbf{W}*{\text{out}}\big|*2^2
-;+; \lambda \big|\mathbf{W}*{\text{out}}\big|*2^2,
-\quad\Rightarrow\quad
-\mathbf{W}*{\text{out}} = (\mathbf{Z}^\top\mathbf{Z} + \lambda \mathbf{I})^{-1}\mathbf{Z}^\top\mathbf{Y}.
-]
-Columns of (\mathbf{Z}) should be standardized for numerical stability (the implementation uses `StandardScaler`).
+Only the final linear readout $\mathbf{W}_{\text{out}} \in \mathbb{R}^{D\times m}$ is trained via ridge regression:
+
+$$
+\min_{\mathbf{W}_{\text{out}}} \left\|\mathbf{Y} - \mathbf{Z}\mathbf{W}_{\text{out}}\right\|_2^2 + \lambda \left\|\mathbf{W}_{\text{out}}\right\|_2^2
+$$
+
+$$
+\Rightarrow\quad
+\mathbf{W}_{\text{out}} = (\mathbf{Z}^\top\mathbf{Z} + \lambda \mathbf{I})^{-1}\mathbf{Z}^\top\mathbf{Y}.
+$$
+
+Columns of $\mathbf{Z}$ should be standardized for numerical stability (the implementation uses `StandardScaler`).
 
 ### Forecasting strategies
 
