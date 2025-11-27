@@ -176,17 +176,25 @@ $$
 \end{aligned}
 $$
 
-где:
-- \(u_t\) — входной сигнал (например, компоненты \(X_t\)),
-- \([1; u_t]\) — вход с добавленным смещением (bias),
-- \(\alpha\) — **leaking rate** (параметр `leaking_rate`).
+where:
+- \(u_t\) is the input (e.g., components of \(X_t\))
+- \([1; u_t]\) denotes a bias‑augmented input
+- \(\alpha\) is the **leaking rate** (`leaking_rate` parameter)
 
-Для выполнения **echo state property** (забывание начальных условий) масштабируйте резервуар так, чтобы его спектральный радиус \(\rho(\mathbf{W})\) был близок к 1 (практически 0.7–1.2 с учётом утечки; параметр `spectral_radius`).
+To satisfy the **echo state property** (state forgets initial conditions), scale the reservoir so that its spectral radius \(\rho(\mathbf{W})\) is near 1 (practically 0.7–1.2 with leakage; `spectral_radius` parameter).
 
-Признаки в момент времени \(t\) формируются объединением состояния резервуара с детерминированными блоками:
+We collect features at time \(t\) by concatenating the reservoir state with deterministic blocks:
 
 $$
-\mathbf{z}_t = \left[ \mathbf{x}_t \mid \phi_{\text{poly}}(u_t) \mid \phi_{\text{Fourier}}(u_t) \right] \in \mathbb{R}^{D}.
+\mathbf{z}_t = \big[ \mathbf{x}_t \mid \phi_{\text{poly}}(u_t) \mid \phi_{\text{Fourier}}(u_t) \big] \in \mathbb{R}^{D}
+$$
+
+**Notation:**
+- \(\mathbf{W}\): reservoir weight matrix
+- \(\mathbf{W}_{\text{in}}\): input weight matrix  
+- \(\phi_{\text{poly}}\): polynomial features
+- \(\phi_{\text{Fourier}}\): Fourier features
+- \(D\): total feature dimension
 
 ### Fourier & Polynomial feature blocks (FAN)
 
