@@ -167,7 +167,7 @@ gen  = model.predict(X[-1:], generative_steps=200)  # recursive forecast
 
 ### Echo State Network (leaky ESN)
 
-Reservoir state \(\mathbf{x}_t \in \mathbb{R}^{N_r}\) evolves under a fixed random dynamical system:
+Reservoir state $\mathbf{x}_t \in \mathbb{R}^{N_r}$ evolves under a fixed random dynamical system:
 
 $$
 \begin{aligned}
@@ -177,13 +177,13 @@ $$
 $$
 
 where:
-- $$u_t$$ is the input (e.g., components of \X_t)
-- $$\[1; u_t]$$ denotes a bias‑augmented input
-- $$\alpha$$ is the **leaking rate** (`leaking_rate` parameter)
+- $u_t$ is the input (e.g., components of $X_t$)
+- $[1; u_t]$ denotes a bias‑augmented input
+- $\alpha$ is the **leaking rate** (`leaking_rate` parameter)
 
-To satisfy the **echo state property** (state forgets initial conditions), scale the reservoir so that its spectral radius \(\rho(\mathbf{W})\) is near 1 (practically 0.7–1.2 with leakage; `spectral_radius` parameter).
+To satisfy the **echo state property** (state forgets initial conditions), scale the reservoir so that its spectral radius $\rho(\mathbf{W})$ is near 1 (practically 0.7–1.2 with leakage; `spectral_radius` parameter).
 
-We collect features at time \(t\) by concatenating the reservoir state with deterministic blocks:
+We collect features at time $t$ by concatenating the reservoir state with deterministic blocks:
 
 $$
 \mathbf{z}_t = \big[ \mathbf{x}_t \mid \phi_{\text{poly}}(u_t) \mid \phi_{\text{Fourier}}(u_t) \big] \in \mathbb{R}^{D}
