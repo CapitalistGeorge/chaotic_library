@@ -2,6 +2,8 @@
 Enhanced Echo State Network with Fourier Analysis Network (FAN) features.
 """
 
+from __future__ import annotations
+
 import warnings
 from typing import Optional
 
@@ -20,59 +22,25 @@ class EnhancedESN_FAN:
     Parameters
     ----------
     input_dim : int
-        Dimensionality of input features per timestep
+        Dimensionality of input features per timestep.
     reservoir_size : int, default=100
-        Number of neurons in the reservoir
+        Number of neurons in the reservoir.
     spectral_radius : float, default=0.9
-        Spectral radius of the reservoir weight matrix
+        Spectral radius of the reservoir weight matrix.
     sparsity : float, default=0.1
-        Sparsity proportion of reservoir connections (0-1)
+        Effective fraction of non-zero reservoir connections.
     ridge_alpha : float, default=1.0
-        Regularization strength for ridge regression
+        Regularization strength for ridge regression.
     leaking_rate : float, default=1.0
-        Leaking rate for reservoir state updates (0-1)
+        Leaking rate for reservoir state updates (0-1).
     poly_order : int, default=2
-        Order of polynomial features
+        Order of polynomial features.
     fan_terms : int, default=5
-        Number of Fourier terms (k in sin(2πkx), cos(2πkx))
+        Number of Fourier terms (k in sin(2πkx), cos(2πkx)).
     random_state : int, default=42
-        Random seed for reproducibility
+        Random seed for reproducibility.
     clip_value : float, default=3.0
-        Maximum absolute value for clipping scaled inputs
-
-    Attributes
-    ----------
-    Win : ndarray
-        Input weight matrix of shape (reservoir_size, input_dim + 1)
-    W : ndarray
-        Reservoir weight matrix of shape (reservoir_size, reservoir_size)
-    ridge : Ridge
-        Ridge regression model for readout layer
-    scaler : StandardScaler
-        Scaler for combined features
-    input_scaler : StandardScaler
-        Scaler for input data
-    poly : PolynomialFeatures
-        Polynomial feature generator
-
-    Examples
-    --------
-    >>> from chaotic_library.enhanced_esn_fan import EnhancedESN_FAN
-    >>> import numpy as np
-    >>>
-    >>> # Generate sample data
-    >>> X = np.random.randn(1000, 5)
-    >>> y = np.random.randn(1000)
-    >>>
-    >>> # Initialize and fit model
-    >>> esn = EnhancedESN_FAN(input_dim=5, reservoir_size=200)
-    >>> esn.fit(X, y)
-    >>>
-    >>> # Predict
-    >>> predictions = esn.predict(X[:10])
-    >>>
-    >>> # Generative forecasting
-    >>> future_predictions = esn.predict(X[-1:], generative_steps=50)
+        Maximum absolute value for clipping scaled inputs.
     """
 
     def __init__(
@@ -87,7 +55,7 @@ class EnhancedESN_FAN:
         fan_terms: int = 5,
         random_state: int = 42,
         clip_value: float = 3.0,
-    ):
+    ) -> None:
         self.input_dim = input_dim
         self.reservoir_size = reservoir_size
         self.spectral_radius = spectral_radius
@@ -97,26 +65,23 @@ class EnhancedESN_FAN:
         self.fan_terms = fan_terms
         self.random_state = random_state
         self.clip_value = clip_value
+        self.ridge_alpha = ridge_alpha
 
-        # Validate parameters
         self._validate_parameters()
 
-        # Set random seed
-        np.random.seed(self.random_state)
+        self.rng = np.random.default_rng(self.random_state)
 
-        # Initialize components
         self.poly = PolynomialFeatures(degree=self.poly_order, include_bias=False)
-
-        self.ridge = Ridge(alpha=ridge_alpha, random_state=random_state)
+        self.ridge = Ridge(alpha=self.ridge_alpha, random_state=self.random_state)
         self.scaler = StandardScaler()
         self.input_scaler = StandardScaler()
 
-        # Weight matrices (initialized during fit)
-        self.Win = None
-        self.W = None
+        self.Win: Optional[np.ndarray] = None
+        self.W: Optional[np.ndarray] = None
 
-        # Model state
         self._is_fitted = False
+        self.output_dim_: Optional[int] = None
+        self.last_state_: Optional[np.ndarray] = None
 
     def _validate_parameters(self) -> None:
         """Validate initialization parameters."""
@@ -136,42 +101,72 @@ class EnhancedESN_FAN:
             raise ValueError("poly_order must be at least 1")
         if self.clip_value <= 0:
             raise ValueError("clip_value must be positive")
+        if self.ridge_alpha < 0:
+            raise ValueError("ridge_alpha must be non-negative")
+
+    def _validate_X(self, X: np.ndarray, *, check_min_samples: bool = False) -> np.ndarray:
+        """Validate input matrix X."""
+        X = np.asarray(X, dtype=float)
+
+        if X.ndim != 2:
+            raise ValueError("X must be 2-dimensional")
+
+        if X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"Expected X with {self.input_dim} features, got {X.shape[1]}"
+            )
+
+        if check_min_samples and X.shape[0] < 10:
+            raise ValueError("Insufficient training data")
+
+        return X
+
+    def _validate_y(self, y: np.ndarray, n_samples: int) -> np.ndarray:
+        """Validate target array y."""
+        y = np.asarray(y, dtype=float)
+
+        if y.ndim not in (1, 2):
+            raise ValueError("y must be 1-dimensional or 2-dimensional")
+
+        if y.shape[0] != n_samples:
+            raise ValueError("X and y must have the same number of samples")
+
+        return y
+
+    def _check_is_fitted(self) -> None:
+        """Raise if model is not fitted."""
+        if not self._is_fitted:
+            raise ValueError("Model must be fitted before prediction")
 
     def initialize_weights(self, X: np.ndarray) -> None:
         """
         Initialize input and reservoir weight matrices.
 
-        Uses input-distribution aware initialization for input weights
+        Uses input-distribution-aware initialization for input weights
         and creates a sparse reservoir matrix with controlled spectral radius.
-
-        Parameters
-        ----------
-        X : ndarray of shape (n_samples, input_dim)
-            Input data for weight initialization
         """
-        n_samples, input_dim = X.shape
+        X = self._validate_X(X)
 
-        if input_dim != self.input_dim:
-            raise ValueError(
-                f"Expected input dimension {self.input_dim}, " f"but got {input_dim}"
-            )
-
-        # Input-distribution aware Win initialization
         inp_mean = np.mean(X, axis=0)
         inp_std = np.std(X, axis=0)
-        mu, sigma = np.mean(inp_mean), np.mean(inp_std)
+        mu = float(np.mean(inp_mean))
+        sigma = float(np.mean(inp_std))
 
-        # Input weights with bias term (first column is for bias)
-        self.Win = np.random.normal(mu, sigma, (self.reservoir_size, input_dim + 1))
+        # Avoid degenerate initialization when inputs are nearly constant
+        sigma = max(sigma, 1e-6)
 
-        # Sparse reservoir weights
-        W = np.random.rand(self.reservoir_size, self.reservoir_size) - 0.5
+        self.Win = self.rng.normal(
+            loc=mu,
+            scale=sigma,
+            size=(self.reservoir_size, self.input_dim + 1),
+        )
 
-        # Apply sparsity
-        mask = np.random.rand(*W.shape) > self.sparsity
+        W = self.rng.random((self.reservoir_size, self.reservoir_size)) - 0.5
+
+        # Keep approximately `sparsity` fraction of active connections
+        mask = self.rng.random(W.shape) > self.sparsity
         W[mask] = 0.0
 
-        # Scale by spectral radius
         try:
             eigenvalues = np.linalg.eigvals(W)
             max_eigenvalue = np.max(np.abs(eigenvalues))
@@ -183,67 +178,122 @@ class EnhancedESN_FAN:
                     "Reservoir matrix has near-zero eigenvalues. "
                     "Spectral radius scaling may be ineffective."
                 )
-        except (np.linalg.LinAlgError, ValueError) as e:
-            warnings.warn(f"Eigenvalue computation failed: {e}")
+        except (np.linalg.LinAlgError, ValueError) as exc:
+            warnings.warn(f"Eigenvalue computation failed: {exc}")
 
         self.W = W
 
     def _update_reservoir_state(
-        self, state: np.ndarray, input_vector: np.ndarray
+        self,
+        state: np.ndarray,
+        input_vector: np.ndarray,
     ) -> np.ndarray:
-        """
-        Update reservoir state using ESN dynamics with leaking rate.
+        """Update reservoir state using ESN dynamics with leaking rate."""
+        if self.Win is None or self.W is None:
+            raise ValueError("Weights are not initialized. Call fit() first.")
 
-        Parameters
-        ----------
-        state : ndarray of shape (reservoir_size,)
-            Current reservoir state
-        input_vector : ndarray of shape (input_dim,)
-            Input vector at current time step
+        input_with_bias = np.concatenate(([1.0], input_vector))
+        pre_activation = self.Win @ input_with_bias + self.W @ state
+        new_state = np.tanh(pre_activation)
+
+        return (1.0 - self.leaking_rate) * state + self.leaking_rate * new_state
+
+    def _compute_states(
+        self,
+        X: np.ndarray,
+        initial_state: Optional[np.ndarray] = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Compute reservoir states for a full input sequence.
 
         Returns
         -------
-        ndarray of shape (reservoir_size,)
-            Updated reservoir state
+        states : ndarray of shape (n_timesteps, reservoir_size)
+        last_state : ndarray of shape (reservoir_size,)
         """
-        # Add bias term to input
-        input_with_bias = np.concatenate(([1.0], input_vector))
+        X = self._validate_X(X)
 
-        # Reservoir update
-        pre_activation = self.Win @ input_with_bias + self.W @ state
+        n_timesteps = X.shape[0]
+        states = np.zeros((n_timesteps, self.reservoir_size), dtype=float)
 
-        # Nonlinear activation
-        new_state = np.tanh(pre_activation)
+        if initial_state is None:
+            current_state = np.zeros(self.reservoir_size, dtype=float)
+        else:
+            current_state = np.asarray(initial_state, dtype=float).copy()
+            if current_state.shape != (self.reservoir_size,):
+                raise ValueError(
+                    "initial_state must have shape "
+                    f"({self.reservoir_size},), got {current_state.shape}"
+                )
 
-        # Apply leaking rate
-        updated_state = (1 - self.leaking_rate) * state + self.leaking_rate * new_state
+        for t in range(n_timesteps):
+            current_state = self._update_reservoir_state(current_state, X[t])
+            states[t] = current_state
 
-        return updated_state
+        return states, current_state
+
+    def _scale_input(self, X: np.ndarray, *, fit: bool) -> np.ndarray:
+        """Scale raw inputs and clip extreme standardized values."""
+        if fit:
+            X_scaled = self.input_scaler.fit_transform(X)
+        else:
+            X_scaled = self.input_scaler.transform(X)
+
+        return np.clip(X_scaled, -self.clip_value, self.clip_value)
 
     def _compute_fourier_features(self, X: np.ndarray) -> np.ndarray:
         """
         Compute Fourier Analysis Network features.
 
-        Generates sin(2πkx) and cos(2πkx) terms for k=1 to fan_terms.
-
         Parameters
         ----------
         X : ndarray of shape (n_samples, input_dim)
-            Input data
 
         Returns
         -------
         ndarray of shape (n_samples, 2 * fan_terms * input_dim)
-            Fourier features (sin and cos terms)
         """
         features = []
 
         for k in range(1, self.fan_terms + 1):
-            # sin(2πkX) and cos(2πkX) terms
-            features.append(np.sin(2 * np.pi * k * X))
-            features.append(np.cos(2 * np.pi * k * X))
+            features.append(np.sin(2.0 * np.pi * k * X))
+            features.append(np.cos(2.0 * np.pi * k * X))
 
         return np.hstack(features)
+
+    def _build_feature_matrix(
+        self,
+        X: np.ndarray,
+        states: np.ndarray,
+        *,
+        fit_transformers: bool,
+    ) -> np.ndarray:
+        """
+        Build the full feature matrix using a single, consistent pipeline.
+
+        Pipeline:
+        1) scale raw X with input_scaler
+        2) clip scaled inputs
+        3) build polynomial features
+        4) build Fourier features
+        5) concatenate with reservoir states
+        6) scale combined feature matrix with scaler
+        """
+        X_scaled = self._scale_input(X, fit=fit_transformers)
+
+        if fit_transformers:
+            poly_features = self.poly.fit_transform(X_scaled)
+        else:
+            poly_features = self.poly.transform(X_scaled)
+
+        fourier_features = self._compute_fourier_features(X_scaled)
+        combined_features = np.hstack([states, poly_features, fourier_features])
+
+        if fit_transformers:
+            self.scaler.fit(combined_features)
+            self.scaler.scale_[self.scaler.scale_ == 0.0] = 1.0
+
+        return self.scaler.transform(combined_features)
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "EnhancedESN_FAN":
         """
@@ -252,69 +302,38 @@ class EnhancedESN_FAN:
         Parameters
         ----------
         X : ndarray of shape (n_timesteps, input_dim)
-            Input time series data
+            Input time series data.
         y : ndarray of shape (n_timesteps,) or (n_timesteps, output_dim)
-            Target values
+            Target values.
 
         Returns
         -------
         self : EnhancedESN_FAN
-            Fitted model
-
-        Raises
-        ------
-        ValueError
-            If input dimensions are inconsistent or data is insufficient
+            Fitted model.
         """
-        X = np.asarray(X, dtype=float)
-        y = np.asarray(y, dtype=float)
+        X = self._validate_X(X, check_min_samples=True)
+        y = self._validate_y(y, n_samples=X.shape[0])
 
-        if X.ndim != 2:
-            raise ValueError("X must be 2-dimensional")
-
-        if X.shape[0] != y.shape[0]:
-            raise ValueError("X and y must have the same number of samples")
-
-        if X.shape[0] < 10:
-            raise ValueError("Insufficient training data")
-
-        # Initialize reservoir weights
         self.initialize_weights(X)
 
-        # Collect reservoir states through time
-        n_timesteps = X.shape[0]
-        states = np.zeros((n_timesteps, self.reservoir_size))
-        current_state = np.zeros(self.reservoir_size)
+        states, last_state = self._compute_states(X)
+        scaled_features = self._build_feature_matrix(
+            X,
+            states,
+            fit_transformers=True,
+        )
 
-        for t in range(n_timesteps):
-            current_state = self._update_reservoir_state(current_state, X[t])
-            states[t] = current_state
-
-        # Prepare features
-        X_scaled = self.input_scaler.fit_transform(X)
-
-        # Polynomial features
-        poly_features = self.poly.fit_transform(X_scaled)
-
-        # Fourier features
-        fourier_features = self._compute_fourier_features(X_scaled)
-
-        # Combine all features
-        combined_features = np.hstack([states, poly_features, fourier_features])
-
-        # Scale combined features with zero-division protection
-        self.scaler.fit(combined_features)
-        self.scaler.scale_[self.scaler.scale_ == 0.0] = 1.0
-        scaled_features = self.scaler.transform(combined_features)
-
-        # Fit readout layer
         self.ridge.fit(scaled_features, y)
 
+        self.output_dim_ = 1 if y.ndim == 1 else y.shape[1]
+        self.last_state_ = last_state.copy()
         self._is_fitted = True
         return self
 
     def predict(
-        self, X: np.ndarray, generative_steps: Optional[int] = None
+        self,
+        X: np.ndarray,
+        generative_steps: Optional[int] = None,
     ) -> np.ndarray:
         """
         Generate predictions using the fitted model.
@@ -322,105 +341,88 @@ class EnhancedESN_FAN:
         Parameters
         ----------
         X : ndarray of shape (n_timesteps, input_dim)
-            Input data for prediction
+            Input data for prediction.
         generative_steps : int, optional
-            If provided, perform generative forecasting for this many steps.
-            If None, perform one-step prediction (teacher forcing).
+            If provided, perform recursive/generative forecasting for this many steps.
+            If None, perform teacher-forcing / open-loop prediction.
 
         Returns
         -------
         ndarray
-            Predictions. Shape depends on generative_steps:
-            - If generative_steps is None: (n_timesteps, output_dim)
-            - If generative_steps is provided: (generative_steps, output_dim)
-
-        Raises
-        ------
-        ValueError
-            If model is not fitted or input dimensions are invalid
+            Predictions.
         """
-        if not self._is_fitted:
-            raise ValueError("Model must be fitted before prediction")
-
-        X = np.asarray(X, dtype=float)
-
-        if X.ndim != 2:
-            raise ValueError("X must be 2-dimensional")
+        self._check_is_fitted()
+        X = self._validate_X(X)
 
         if generative_steps is None:
             return self._predict_open_loop(X)
-        else:
-            if generative_steps <= 0:
-                raise ValueError("generative_steps must be positive")
-            return self._predict_generative(X, generative_steps)
+
+        if generative_steps <= 0:
+            raise ValueError("generative_steps must be positive")
+
+        return self._predict_generative(X, generative_steps)
 
     def _predict_open_loop(self, X: np.ndarray) -> np.ndarray:
         """One-step prediction (teacher forcing)."""
-        n_timesteps = X.shape[0]
-        states = np.zeros((n_timesteps, self.reservoir_size))
-        current_state = np.zeros(self.reservoir_size)
-
-        # Update reservoir states
-        for t in range(n_timesteps):
-            current_state = self._update_reservoir_state(current_state, X[t])
-            states[t] = current_state
-
-        # Prepare features (using original X for polynomial/Fourier)
-        poly_features = self.poly.transform(X)
-        fourier_features = self._compute_fourier_features(X)
-        combined_features = np.hstack([states, poly_features, fourier_features])
-
-        # Scale and predict
-        scaled_features = self.scaler.transform(combined_features)
+        states, _ = self._compute_states(X)
+        scaled_features = self._build_feature_matrix(
+            X,
+            states,
+            fit_transformers=False,
+        )
         return self.ridge.predict(scaled_features)
 
     def _predict_generative(self, X: np.ndarray, steps: int) -> np.ndarray:
-        """Generative forecasting (recursive prediction)."""
-        # Start from last input
-        current_input = X[-1].copy()
-        current_state = np.zeros(self.reservoir_size)
+        """
+        Generative forecasting (recursive prediction).
+
+        Notes
+        -----
+        This mode requires output_dim == input_dim because each prediction is
+        fed back as the next input.
+        """
+        if self.output_dim_ != self.input_dim:
+            raise ValueError(
+                "Generative forecasting requires output_dim == input_dim "
+                f"(got output_dim={self.output_dim_}, input_dim={self.input_dim})"
+            )
+
+        # Use the provided seed sequence to move reservoir state to the correct context
+        _, current_state = self._compute_states(X)
+        current_input = X[-1].astype(float).copy()
+
         predictions = []
 
         for _ in range(steps):
-            # Update reservoir state
             current_state = self._update_reservoir_state(current_state, current_input)
 
-            # Prepare features for prediction
-            input_scaled = self.input_scaler.transform(current_input.reshape(1, -1))
+            scaled_feature_vector = self._build_feature_matrix(
+                current_input.reshape(1, -1),
+                current_state.reshape(1, -1),
+                fit_transformers=False,
+            )
 
-            # Clip to prevent extreme values
-            input_scaled = np.clip(input_scaled, -self.clip_value, self.clip_value)
+            next_pred = self.ridge.predict(scaled_feature_vector)
+            next_input = np.asarray(next_pred, dtype=float).reshape(-1)
 
-            poly_features = self.poly.transform(input_scaled)
-            fourier_features = self._compute_fourier_features(input_scaled)
-
-            # Combine features
-            feature_vector = np.hstack(
-                [current_state, poly_features.ravel(), fourier_features.ravel()]
-            ).reshape(1, -1)
-
-            # Scale and predict
-            scaled_features = self.scaler.transform(feature_vector)
-            next_input = self.ridge.predict(scaled_features)
-
-            predictions.append(next_input.ravel())
-            current_input = next_input  # Feedback for next step
+            predictions.append(next_input.copy())
+            current_input = next_input
 
         return np.vstack(predictions)
 
     @property
     def is_fitted(self) -> bool:
-        """Check if model has been fitted."""
+        """Check if the model has been fitted."""
         return self._is_fitted
 
     def get_params(self, deep: bool = True) -> dict:
-        """Get parameters for this model."""
+        """Get parameters for this estimator."""
         return {
             "input_dim": self.input_dim,
             "reservoir_size": self.reservoir_size,
             "spectral_radius": self.spectral_radius,
             "sparsity": self.sparsity,
-            "ridge_alpha": self.ridge.alpha,
+            "ridge_alpha": self.ridge_alpha,
             "leaking_rate": self.leaking_rate,
             "poly_order": self.poly_order,
             "fan_terms": self.fan_terms,
@@ -429,12 +431,42 @@ class EnhancedESN_FAN:
         }
 
     def set_params(self, **params) -> "EnhancedESN_FAN":
-        """Set the parameters of this model."""
+        """
+        Set parameters for this estimator.
+
+        Structural parameter changes invalidate the fitted state.
+        """
+        valid_params = {
+            "input_dim",
+            "reservoir_size",
+            "spectral_radius",
+            "sparsity",
+            "ridge_alpha",
+            "leaking_rate",
+            "poly_order",
+            "fan_terms",
+            "random_state",
+            "clip_value",
+        }
+
         for key, value in params.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-            elif key == "ridge_alpha":
-                self.ridge.alpha = value
-            else:
+            if key not in valid_params:
                 raise ValueError(f"Invalid parameter: {key}")
+            setattr(self, key, value)
+
+        self._validate_parameters()
+
+        # Recreate dependent objects
+        self.rng = np.random.default_rng(self.random_state)
+        self.poly = PolynomialFeatures(degree=self.poly_order, include_bias=False)
+        self.ridge = Ridge(alpha=self.ridge_alpha, random_state=self.random_state)
+        self.scaler = StandardScaler()
+        self.input_scaler = StandardScaler()
+
+        self.Win = None
+        self.W = None
+        self.last_state_ = None
+        self.output_dim_ = None
+        self._is_fitted = False
+
         return self

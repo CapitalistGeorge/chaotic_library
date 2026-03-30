@@ -14,8 +14,8 @@ from .chaotic_measures import (embedding_dimension, fourier_harmonic_count,
 from .enhanced_esn_fan import EnhancedESN_FAN
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+__author__ = "Georgii Konev"
+__email__ = "g_konev@bk.ru"
 
 __all__ = [
     # Chaos analysis functions
