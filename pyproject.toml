@@ -52,9 +52,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "ruff>=0.5.0",
+dev = ["pytest>=7.0.0", "ruff>=0.5.0", "black>=24.0", "isort>=5.13"]
+research = [
+  "lightgbm>=4.0",
+  "reservoirpy>=0.4",
+  "git+https://github.com/nickc1/skccm.git#egg=skccm"
 ]
 
 [project.urls]

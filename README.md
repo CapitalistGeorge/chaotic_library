@@ -48,25 +48,23 @@ Long‑horizon forecasting on chaotic / weakly stationary signals is tricky: sta
 
 ---
 
-## Install
+## Installation
+
+### Core package installation
 
 ```bash
-# From source (recommended for now)
 git clone https://github.com/CapitalistGeorge/chaotic_library.git
 cd chaotic_library
 
 python -m venv .venv
+
 # macOS/Linux
 source .venv/bin/activate
+
 # Windows (PowerShell)
 # .venv\Scripts\Activate.ps1
 
 python -m pip install -U pip
-
-# Option 1: install dependencies only (for running notebooks / scripts)
-pip install -r requirements.txt
-
-# Option 2: install the package in editable mode (preferred while developing)
 pip install -e .
 ```
 
